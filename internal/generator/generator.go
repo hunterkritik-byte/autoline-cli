@@ -9,41 +9,68 @@ import (
     "github.com/hunterkritik-byte/autoline-cli/internal/detector"
 )
 
+// Files returns the deterministic set of assets AutoLine would generate.
+func Files(s detector.Stack) []struct{ Path, Content string } {
+    docker, workflow, precommit := Templates(s)
+    return []struct{ Path, Content string }{
+        {"Dockerfile", docker},
+        {".github/workflows/autoline.yml", workflow},
+        {".pre-commit-config.yaml", precommit},
+    }
+}
+
 func Generate(root string, stack detector.Stack, force bool) error {
-    docker, workflow, precommit := Templates(stack)
-    files := map[string]string{"Dockerfile": docker, ".github/workflows/autoline.yml": workflow, ".pre-commit-config.yaml": precommit}
-    for name, content := range files {
-        path := filepath.Join(root, name)
+    for _, file := range Files(stack) {
+        path := filepath.Join(root, file.Path)
         if !force {
-            if _, err := os.Stat(path); err == nil { return fmt.Errorf("refusing to overwrite %s; rerun with --force", name) }
-            if !os.IsNotExist(err) { return fmt.Errorf("inspect %s: %w", name, err) }
+            if _, err := os.Stat(path); err == nil {
+                return fmt.Errorf("refusing to overwrite %s; rerun with --force", file.Path)
+            } else if !os.IsNotExist(err) {
+                return fmt.Errorf("inspect %s: %w", file.Path, err)
+            }
         }
-        if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { return fmt.Errorf("create directory for %s: %w", name, err) }
-        if err := os.WriteFile(path, []byte(content), 0o644); err != nil { return fmt.Errorf("write %s: %w", name, err) }
+        if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+            return fmt.Errorf("create directory for %s: %w", file.Path, err)
+        }
+        if err := os.WriteFile(path, []byte(file.Content), 0o644); err != nil {
+            return fmt.Errorf("write %s: %w", file.Path, err)
+        }
     }
     return nil
 }
 
 func Templates(s detector.Stack) (string, string, string) {
     switch s.Name {
-    case "Node.js": return nodeDocker(s), nodeWorkflow(s), precommit()
-    case "Python": return pythonDocker(s), pythonWorkflow(s), precommit()
-    case "Go": return goDocker(s), goWorkflow(s), precommit()
-    case "Rust": return rustDocker(s), rustWorkflow(s), precommit()
-    default: return genericDocker(), genericWorkflow(), precommit()
+    case "Node.js":
+        return nodeDocker(s), nodeWorkflow(s), precommit()
+    case "Python":
+        return pythonDocker(s), pythonWorkflow(s), precommit()
+    case "Go":
+        return goDocker(s), goWorkflow(s), precommit()
+    case "Rust":
+        return rustDocker(s), rustWorkflow(s), precommit()
+    default:
+        return genericDocker(), genericWorkflow(), precommit()
     }
 }
 
 func nodeDocker(s detector.Stack) string {
     install := installCommand(s)
     build := s.BuildCommand
-    if s.PackageManager == "pnpm" && strings.HasPrefix(build, "npm run") { build = strings.Replace(build, "npm run", "pnpm run", 1) }
-    if s.PackageManager == "yarn" && strings.HasPrefix(build, "npm run") { build = strings.Replace(build, "npm run", "yarn", 1) }
+    if build == "" {
+        build = "echo 'No build script detected'"
+    }
+    cache := "/root/.npm"
+    if s.PackageManager == "pnpm" {
+        cache = "/root/.local/share/pnpm/store"
+    } else if s.PackageManager == "yarn" {
+        cache = "/usr/local/share/.cache/yarn"
+    }
     return fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM node:22-bookworm AS build
 WORKDIR /app
 COPY %s ./
-RUN --mount=type=cache,target=/root/.npm %s
+RUN --mount=type=cache,target=%s %s
 COPY . .
 RUN %s
 
@@ -52,15 +79,24 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app ./
 CMD ["%s"]
-`, strings.Join(s.DependencyFiles, " "), install, build, shellJSON(s.RuntimeCommand))
+`, strings.Join(s.DependencyFiles, " "), cache, install, build, shellJSON(s.RuntimeCommand))
 }
 
 func pythonDocker(s detector.Stack) string {
-    if len(s.DependencyFiles) == 0 { return genericDocker() }
+    if len(s.DependencyFiles) == 0 {
+        return genericDocker()
+    }
     dep := strings.Join(s.DependencyFiles, " ")
     install := "python -m pip install --prefix=/install -r requirements.txt"
-    if s.PackageManager == "poetry" { install = "python -m pip install poetry && poetry install --only main --no-interaction" }
-    if s.PackageManager == "uv" { install = "python -m pip install uv && uv sync --frozen --no-dev" }
+    runtimeCopy := "COPY --from=build /install /usr/local"
+    if s.PackageManager == "poetry" {
+        install = "python -m pip install --prefix=/install poetry && POETRY_VIRTUALENVS_CREATE=false poetry install --only main --no-interaction"
+        runtimeCopy = "COPY --from=build /usr/local /usr/local\nCOPY --from=build /install /usr/local"
+    }
+    if s.PackageManager == "uv" {
+        install = "python -m pip install --prefix=/install uv && uv pip install --system --prefix=/install --no-deps -r requirements.txt"
+        runtimeCopy = "COPY --from=build /install /usr/local"
+    }
     return fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM python:3.13-slim AS build
 WORKDIR /app
@@ -70,11 +106,10 @@ COPY . .
 
 FROM python:3.13-slim
 WORKDIR /app
-COPY --from=build /usr/local /usr/local
-COPY --from=build /install /usr/local
+%s
 COPY --from=build /app ./
 CMD ["python", "app.py"]
-`, dep, install)
+`, dep, install, runtimeCopy)
 }
 
 func goDocker(s detector.Stack) string {
@@ -106,21 +141,34 @@ ENTRYPOINT ["/usr/local/bin/%s"]
 `, s.BinaryName, s.BinaryName, s.BinaryName)
 }
 
-func genericDocker() string { return `# syntax=docker/dockerfile:1.7
+func genericDocker() string {
+    return `# syntax=docker/dockerfile:1.7
 FROM alpine:3.22
 WORKDIR /app
 COPY . .
 CMD ["sh"]
-` }
+`
+}
 
 func nodeWorkflow(s detector.Stack) string {
     cache := "npm"
-    if s.PackageManager == "pnpm" { cache = "pnpm" }
-    if s.PackageManager == "yarn" { cache = "yarn" }
+    install := installCommand(s)
+    if s.PackageManager == "pnpm" {
+        cache = "pnpm"
+    }
+    if s.PackageManager == "yarn" {
+        cache = "yarn"
+    }
+    build := s.BuildCommand
+    if build == "" {
+        build = "echo 'No build script detected'"
+    }
     return fmt.Sprintf(`name: AutoLine CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -134,12 +182,16 @@ jobs:
       - run: %s
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
-`, cache, installCommand(s), s.BuildCommand)
+`, cache, install, build)
 }
-func pythonWorkflow(s detector.Stack) string { return fmt.Sprintf(`name: AutoLine CI
+
+func pythonWorkflow(s detector.Stack) string {
+    return fmt.Sprintf(`name: AutoLine CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -153,11 +205,16 @@ jobs:
       - run: %s
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
-`, pythonInstallCommand(s), s.BuildCommand) }
-func goWorkflow(s detector.Stack) string { return `name: AutoLine CI
+`, pythonInstallCommand(s), s.BuildCommand)
+}
+
+func goWorkflow(s detector.Stack) string {
+    return `name: AutoLine CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -172,11 +229,16 @@ jobs:
       - run: go build ./...
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
-` }
-func rustWorkflow(s detector.Stack) string { return `name: AutoLine CI
+`
+}
+
+func rustWorkflow(s detector.Stack) string {
+    return `name: AutoLine CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -189,11 +251,16 @@ jobs:
       - run: cargo build --release --locked
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
-` }
-func genericWorkflow() string { return `name: AutoLine CI
+`
+}
+
+func genericWorkflow() string {
+    return `name: AutoLine CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -201,8 +268,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
-` }
-func precommit() string { return `repos:
+`
+}
+
+func precommit() string {
+    return `repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -212,7 +282,29 @@ func precommit() string { return `repos:
       - id: check-json
       - id: check-added-large-files
       - id: detect-private-key
-` }
-func installCommand(s detector.Stack) string { if s.PackageManager == "pnpm" { return "corepack enable && pnpm install --frozen-lockfile" }; if s.PackageManager == "yarn" { return "corepack enable && yarn install --immutable" }; return "npm ci" }
-func pythonInstallCommand(s detector.Stack) string { if s.PackageManager == "poetry" { return "python -m pip install poetry && poetry install --only main --no-interaction" }; if s.PackageManager == "uv" { return "python -m pip install uv && uv sync --frozen --no-dev" }; return "python -m pip install -r requirements.txt" }
-func shellJSON(command string) string { return strings.ReplaceAll(command, `"`, `\"`) }
+`
+}
+
+func installCommand(s detector.Stack) string {
+    if s.PackageManager == "pnpm" {
+        return "corepack enable && pnpm install --frozen-lockfile"
+    }
+    if s.PackageManager == "yarn" {
+        return "corepack enable && yarn install --immutable"
+    }
+    return "npm ci"
+}
+
+func pythonInstallCommand(s detector.Stack) string {
+    if s.PackageManager == "poetry" {
+        return "python -m pip install poetry && poetry install --only main --no-interaction"
+    }
+    if s.PackageManager == "uv" {
+        return "python -m pip install uv && uv sync --frozen --no-dev"
+    }
+    return "python -m pip install -r requirements.txt"
+}
+
+func shellJSON(command string) string {
+    return strings.ReplaceAll(command, `"`, `\"`)
+}
