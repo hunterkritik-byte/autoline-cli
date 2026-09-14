@@ -39,7 +39,8 @@ AutoLine scans a repository and generates delivery assets without executing proj
 - Supports `--dry-run` previews and `--json` machine-readable output
 - Provides `autoline doctor` diagnostics for a broad local toolchain
 - Provides `autoline languages` for a machine-readable or human-readable support inventory
-- Keeps detection and generation modular for easy extension
+- Provides optional Python-powered `autoline insights` for repository intelligence
+- Keeps the Go core portable while allowing specialist tooling in other languages
 
 ## Quick start
 
@@ -48,6 +49,15 @@ go install github.com/hunterkritik-byte/autoline-cli/cmd/autoline@latest
 cd your-project
 autoline scan .
 ```
+
+Inspect repository intelligence with the optional Python engine:
+
+```bash
+autoline insights .
+autoline insights . --json
+```
+
+The insights engine uses only Python's standard library, never executes project code, ignores generated/dependency directories, and reports credential **patterns** without printing matched values.
 
 Inspect language support:
 
@@ -105,25 +115,19 @@ A polyglot workspace receives the selected asset set inside each detected servic
 
 ```mermaid
 flowchart TD
-    A[Repository] --> B[DetectWorkspace]
-    B --> C[Manifest + lockfile signals]
-    B --> D[Independent monorepo modules]
-    C --> E[Stack model]
-    D --> E
-    E --> F{CI Provider}
-    F -->|GitHub| G[GitHub Actions]
-    F -->|GitLab| H[GitLab CI]
-    F -->|Bitbucket| I[Bitbucket Pipelines]
-    E --> J[Safe Generator]
-    J --> K[Dockerfile]
-    J --> G
-    J --> H
-    J --> I
-    J --> L[Pre-commit + OCI metadata + SBOM]
-    M[autoline doctor] --> N[Local tool checks]
+    A[Repository] --> B[Go AutoLine Core]
+    B --> C[DetectWorkspace]
+    C --> D[Unified Stack Model]
+    D --> E[Safe Generator]
+    E --> F[Docker + CI + SBOM]
+    B --> G[Optional Specialist Engines]
+    G --> H[Python Insights]
+    G --> I[Future Rust Analyzer]
+    G --> J[Future Node/TS Analyzer]
+    H --> K[JSON / Human Reports]
 ```
 
-The implementation keeps detection side-effect free, models each module independently, and delegates provider-specific output to the generator layer. Existing files are protected by default.
+The implementation keeps detection side-effect free, models each module independently, and delegates provider-specific output to the generator layer. Existing files are protected by default. Specialist engines are optional and do not become a hard runtime dependency of the Go CLI except when their command is explicitly requested.
 
 ### Repository layout
 
@@ -132,7 +136,8 @@ cmd/autoline/main.go          CLI commands and machine-readable output
 internal/detector/            recursive manifest and lockfile signals
 internal/doctor/              local Git/Docker/toolchain diagnostics
 internal/generator/           stack + provider templates and safe writes
-internal/generator/testdata/  immutable generated-asset snapshots
+tools/autoline_insights.py    optional Python repository intelligence
+tools/autoline_insights_test.py Python unit coverage
 docs/                         enterprise knowledge base and architecture guides
 .github/workflows/test.yml    Go, race, vet, build, and CLI validation
 ```
@@ -156,8 +161,6 @@ docs/                         enterprise knowledge base and architecture guides
 | C/C++ | CMakeLists.txt | Detection + safe generic generation |
 | Generic | no recognized manifest | Reviewable Alpine baseline |
 
-The extended language detectors intentionally prefer a safe baseline over guessing framework-specific runtime artifacts. Language-specific Docker/CI templates can be added independently without changing workspace detection.
-
 ## Development
 
 ```bash
@@ -168,6 +171,8 @@ go vet ./...
 go build ./cmd/autoline
 go run ./cmd/autoline scan . --dry-run --json
 go run ./cmd/autoline languages --json
+python3 -m unittest tools/autoline_insights_test.py
+python3 tools/autoline_insights.py . --json
 ```
 
 Convenience targets are also available:
@@ -178,6 +183,7 @@ make race
 make vet
 make snapshot
 make doctor
+make insights
 make build
 ```
 
@@ -185,7 +191,7 @@ Generated assets are templates, not deployment guarantees. Review custom build o
 
 ## Enterprise direction
 
-AutoLine is designed to grow toward policy-driven generation, registry-backed BuildKit caches, image provenance, framework-aware build artifact detection, richer CI integrations, and dedicated templates for the extended language matrix without coupling repository detection to one provider.
+AutoLine is designed to grow toward policy-driven generation, registry-backed BuildKit caches, image provenance, framework-aware build artifact detection, richer CI integrations, and dedicated specialist analyzers for the extended language matrix without coupling repository detection to one provider.
 
 ## Contributing
 
