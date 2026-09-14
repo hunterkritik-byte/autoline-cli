@@ -14,10 +14,10 @@ import (
 
 const banner = `
     _         _        _     _
-   / \  _   _| |_ ___ | |   (_)_ __   ___
-  / _ \| | | | __/ _ \| |   | | '_ \ / _ \
- / ___ \ |_| | || (_) | |___| | | | |  __/
-/_/   \_\__,_|\__\___/|_____|_|_| |_|\___|
+   / \\  _   _| |_ ___ | |   (_)_ __   ___
+  / _ \\| | | | __/ _ \\| |   | | '_ \\ / _ \\
+ / ___ \\ |_| | || (_) | |___| | | | |  __/
+/_/   \\_\\__,_|\\__\\___/|_____|_|_| |_|\\___|
 `
 
 var version = "dev"
@@ -37,6 +37,13 @@ type moduleOutput struct {
     Path string `json:"path"`
     Stack string `json:"stack"`
     Language string `json:"language"`
+    PackageManager string `json:"package_manager"`
+}
+
+type languageInfo struct {
+    Name string `json:"name"`
+    Language string `json:"language"`
+    Manifest string `json:"manifest"`
     PackageManager string `json:"package_manager"`
 }
 
@@ -66,9 +73,7 @@ func main() {
                 files := generator.FilesForProvider(stack, provider)
                 for _, file := range files { output.Files = append(output.Files, file.Path) }
             } else {
-                for _, module := range workspace.Modules {
-                    output.Modules = append(output.Modules, moduleOutput{module.Path, module.Stack.Name, module.Stack.Language, module.Stack.PackageManager})
-                }
+                for _, module := range workspace.Modules { output.Modules = append(output.Modules, moduleOutput{module.Path, module.Stack.Name, module.Stack.Language, module.Stack.PackageManager}) }
             }
             if jsonOutput {
                 if !dryRun {
@@ -107,8 +112,7 @@ func main() {
             } else {
                 fmt.Println(banner)
                 for _, check := range checks {
-                    status := "✗"
-                    if check.Found { status = "✓" }
+                    status := "✗"; if check.Found { status = "✓" }
                     fmt.Printf("%s %-16s %s\n", status, check.Name, check.Message)
                 }
             }
@@ -118,7 +122,33 @@ func main() {
     }
     doctorCmd.Flags().BoolVar(&jsonOutput, "json", false, "emit machine-readable diagnostic output")
 
-    root.AddCommand(scan, doctorCmd)
+    languagesCmd := &cobra.Command{
+        Use: "languages", Short: "List supported language and toolchain detection",
+        RunE: func(cmd *cobra.Command, args []string) error {
+            languages := []languageInfo{
+                {"Node.js", "javascript", "package.json", "npm / pnpm / yarn / bun"},
+                {"Python", "python", "requirements.txt / pyproject.toml", "pip / poetry / uv"},
+                {"Go", "go", "go.mod", "go"},
+                {"Rust", "rust", "Cargo.toml", "cargo"},
+                {"Java", "java", "pom.xml", "maven"},
+                {"Kotlin", "kotlin", "build.gradle.kts / settings.gradle.kts", "gradle"},
+                {"C#/.NET", "csharp", "*.csproj / *.sln", "dotnet"},
+                {"PHP", "php", "composer.json", "composer"},
+                {"Ruby", "ruby", "Gemfile", "bundler"},
+                {"Elixir", "elixir", "mix.exs", "mix"},
+                {"Dart/Flutter", "dart", "pubspec.yaml", "pub"},
+                {"Swift", "swift", "Package.swift", "swiftpm"},
+                {"C/C++", "cpp", "CMakeLists.txt", "cmake"},
+            }
+            if jsonOutput { return printJSON(languages) }
+            fmt.Println(banner)
+            for _, item := range languages { fmt.Printf("%-14s %-10s %-34s %s\n", item.Name, item.Language, item.Manifest, item.PackageManager) }
+            return nil
+        },
+    }
+    languagesCmd.Flags().BoolVar(&jsonOutput, "json", false, "emit machine-readable language inventory")
+
+    root.AddCommand(scan, doctorCmd, languagesCmd)
     root.SetHelpTemplate("AutoLine — repository automation\n\n{{.UsageString}}")
     if err := root.Execute(); err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
 }
