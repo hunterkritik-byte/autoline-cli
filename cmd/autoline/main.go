@@ -7,6 +7,7 @@ import (
 
     "github.com/fatih/color"
     "github.com/hunterkritik-byte/autoline-cli/internal/detector"
+    "github.com/hunterkritik-byte/autoline-cli/internal/doctor"
     "github.com/hunterkritik-byte/autoline-cli/internal/generator"
     "github.com/spf13/cobra"
 )
@@ -22,20 +23,20 @@ const banner = `
 var version = "dev"
 
 type scanOutput struct {
-    Path           string             `json:"path"`
-    Stack          string             `json:"stack,omitempty"`
-    Language       string             `json:"language,omitempty"`
-    PackageManager string             `json:"package_manager,omitempty"`
-    Provider       string             `json:"provider"`
-    Files          []string           `json:"files,omitempty"`
-    Modules        []moduleOutput     `json:"modules,omitempty"`
-    DryRun         bool               `json:"dry_run"`
+    Path string `json:"path"`
+    Stack string `json:"stack,omitempty"`
+    Language string `json:"language,omitempty"`
+    PackageManager string `json:"package_manager,omitempty"`
+    Provider string `json:"provider"`
+    Files []string `json:"files,omitempty"`
+    Modules []moduleOutput `json:"modules,omitempty"`
+    DryRun bool `json:"dry_run"`
 }
 
 type moduleOutput struct {
-    Path           string `json:"path"`
-    Stack          string `json:"stack"`
-    Language       string `json:"language"`
+    Path string `json:"path"`
+    Stack string `json:"stack"`
+    Language string `json:"language"`
     PackageManager string `json:"package_manager"`
 }
 
@@ -81,7 +82,7 @@ func main() {
             color.Green("CI provider: %s", provider)
             if len(workspace.Modules) == 1 {
                 color.Green("Detected: %s (%s, %s)", output.Stack, output.Language, output.PackageManager)
-                if dryRun { color.Yellow("Dry run — no files written") ; return nil }
+                if dryRun { color.Yellow("Dry run — no files written"); return nil }
             } else {
                 color.Green("Detected polyglot workspace with %d modules:", len(workspace.Modules))
                 for _, module := range workspace.Modules { fmt.Printf("  • %s — %s (%s)\n", module.Path, module.Stack.Name, module.Stack.PackageManager) }
@@ -96,12 +97,33 @@ func main() {
     scan.Flags().BoolVar(&dryRun, "dry-run", false, "detect and preview generated files without writing")
     scan.Flags().BoolVar(&jsonOutput, "json", false, "emit machine-readable scan output")
     scan.Flags().StringVar(&providerName, "provider", "github", "CI provider: github, gitlab, or bitbucket")
-    root.AddCommand(scan)
+
+    doctorCmd := &cobra.Command{
+        Use: "doctor", Short: "Check local tools required by generated workflows",
+        RunE: func(cmd *cobra.Command, args []string) error {
+            checks := doctor.Run()
+            if jsonOutput {
+                if err := printJSON(checks); err != nil { return err }
+            } else {
+                fmt.Println(banner)
+                for _, check := range checks {
+                    status := "✗"
+                    if check.Found { status = "✓" }
+                    fmt.Printf("%s %-16s %s\n", status, check.Name, check.Message)
+                }
+            }
+            if !doctor.Healthy(checks) { return fmt.Errorf("one or more required tools are unavailable") }
+            return nil
+        },
+    }
+    doctorCmd.Flags().BoolVar(&jsonOutput, "json", false, "emit machine-readable diagnostic output")
+
+    root.AddCommand(scan, doctorCmd)
     root.SetHelpTemplate("AutoLine — repository automation\n\n{{.UsageString}}")
     if err := root.Execute(); err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
 }
 
-func printJSON(out scanOutput) error {
+func printJSON(out any) error {
     data, err := json.MarshalIndent(out, "", "  ")
     if err != nil { return err }
     fmt.Println(string(data))

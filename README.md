@@ -2,7 +2,7 @@
 
 > ⚡ High-performance, zero-config repository automation for modern engineering teams.
 
-[![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go)](https://go.dev/) [![CI](https://github.com/hunterkritik-byte/autoline-cli/actions/workflows/test.yml/badge.svg)](https://github.com/hunterkritik-byte/autoline-cli/actions/workflows/test.yml)
+[![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/) [![CI](https://github.com/hunterkritik-byte/autoline-cli/actions/workflows/test.yml/badge.svg)](https://github.com/hunterkritik-byte/autoline-cli/actions/workflows/test.yml)
 
 ## 💖 Sponsor This Project
 
@@ -17,6 +17,7 @@ If AutoLine saves your team engineering time or CI spend, please consider sponso
 | Guide | What you get |
 | --- | --- |
 | [Architecture](docs/architecture.md) | Detector signals, workspace model, generation engine, extension boundaries |
+| [Enterprise guide](docs/enterprise-guide.md) | CLI contract, rollout, safety, testing, and adoption guidance |
 | [Monorepos](docs/monorepos.md) | Polyglot microservices and independent module generation |
 | [Caching](docs/caching.md) | Exact BuildKit mounts, CI caches, and cost mechanics |
 | [Design & safety](docs/design.md) | Project design, safety model, and extension points |
@@ -36,6 +37,7 @@ AutoLine scans a repository and generates delivery assets without executing proj
 - Generates pre-commit hooks for common repository hygiene checks
 - Protects existing generated files unless `--force` is supplied
 - Supports `--dry-run` previews and `--json` machine-readable output
+- Provides `autoline doctor` diagnostics for local CI/build prerequisites
 - Keeps detection and generation modular for easy extension
 
 ## Quick start
@@ -66,6 +68,13 @@ Get machine-readable output for automation:
 autoline scan . --dry-run --json
 ```
 
+Check the local environment before using generated workflows:
+
+```bash
+autoline doctor
+autoline doctor --json
+```
+
 To intentionally replace existing generated assets:
 
 ```bash
@@ -84,6 +93,42 @@ bitbucket-pipelines.yml          # Bitbucket provider
 
 A polyglot workspace receives the selected asset set inside each detected service directory.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Repository] --> B[DetectWorkspace]
+    B --> C[Manifest + lockfile signals]
+    B --> D[Independent monorepo modules]
+    C --> E[Stack model]
+    D --> E
+    E --> F{CI Provider}
+    F -->|GitHub| G[GitHub Actions]
+    F -->|GitLab| H[GitLab CI]
+    F -->|Bitbucket| I[Bitbucket Pipelines]
+    E --> J[Safe Generator]
+    J --> K[Dockerfile]
+    J --> G
+    J --> H
+    J --> I
+    J --> L[Pre-commit + OCI metadata + SBOM]
+    M[autoline doctor] --> N[Local tool checks]
+```
+
+The implementation keeps detection side-effect free, models each module independently, and delegates provider-specific output to the generator layer. Existing files are protected by default.
+
+### Repository layout
+
+```text
+cmd/autoline/main.go          CLI commands and machine-readable output
+internal/detector/            recursive manifest and lockfile signals
+internal/doctor/              local Git/Docker/Buildx/pre-commit diagnostics
+internal/generator/           stack + provider templates and safe writes
+internal/generator/testdata/  immutable generated-asset snapshots
+docs/                         enterprise knowledge base and architecture guides
+.github/workflows/test.yml    Go, race, vet, build, and CLI validation
+```
+
 ## Supported stacks
 
 | Stack | Detection | Docker strategy | CI setup |
@@ -94,27 +139,29 @@ A polyglot workspace receives the selected asset set inside each detected servic
 | Rust | Cargo.toml | Cargo cache + distroless runtime | Rust toolchain / provider pipeline |
 | Generic | fallback | reviewable Alpine base | Docker build |
 
-## Architecture
-
-```text
-cmd/autoline/main.go          CLI, provider selection, workspace reporting
-internal/detector/            recursive manifest and lockfile signals
-internal/generator/           stack + provider templates and safe writes
-internal/generator/testdata/  immutable generated-asset snapshots
-docs/                         enterprise knowledge base
-.github/workflows/test.yml    AutoLine project validation
-```
-
 ## Development
 
 ```bash
 go mod tidy
 go test ./...
+go test -race ./...
 go vet ./...
+go build ./cmd/autoline
 go run ./cmd/autoline scan . --dry-run --json
 ```
 
-Generated assets are templates, not deployment guarantees. Review custom build outputs, native dependencies, monorepo layouts, secrets, and deployment-specific requirements before production use.
+Convenience targets are also available:
+
+```bash
+make test
+make race
+make vet
+make snapshot
+make doctor
+make build
+```
+
+Generated assets are templates, not deployment guarantees. Review custom build outputs, native dependencies, secrets, and deployment-specific requirements before production use.
 
 ## Enterprise direction
 
