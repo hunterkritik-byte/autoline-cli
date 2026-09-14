@@ -22,12 +22,12 @@ const banner = `
 var version = "dev"
 
 type scanOutput struct {
-    Path           string `json:"path"`
-    Stack          string `json:"stack"`
-    Language       string `json:"language"`
-    PackageManager string `json:"package_manager"`
+    Path           string   `json:"path"`
+    Stack          string   `json:"stack"`
+    Language       string   `json:"language"`
+    PackageManager string   `json:"package_manager"`
     Files          []string `json:"files"`
-    DryRun         bool `json:"dry_run"`
+    DryRun         bool     `json:"dry_run"`
 }
 
 func main() {
@@ -64,22 +64,23 @@ func main() {
             }
 
             if jsonOutput {
-                out := scanOutput{Path: rootPath, Stack: stack.Name, Language: stack.Language, PackageManager: stack.PackageManager, Files: names, DryRun: dryRun}
-                data, err := json.MarshalIndent(out, "", "  ")
-                if err != nil { return err }
-                fmt.Println(string(data))
-                if dryRun { return nil }
-            } else {
-                fmt.Println(banner)
-                color.Cyan("Scanning: %s", rootPath)
-                color.Green("Detected: %s (%s, %s)", stack.Name, stack.Language, stack.PackageManager)
                 if dryRun {
-                    color.Yellow("Dry run — would generate:")
-                    for _, file := range files { fmt.Printf("  • %s\n", file.Path) }
-                    return nil
+                    return printJSON(scanOutput{Path: rootPath, Stack: stack.Name, Language: stack.Language, PackageManager: stack.PackageManager, Files: names, DryRun: true})
                 }
+                if err := generator.Generate(rootPath, stack, force); err != nil {
+                    return err
+                }
+                return printJSON(scanOutput{Path: rootPath, Stack: stack.Name, Language: stack.Language, PackageManager: stack.PackageManager, Files: names, DryRun: false})
             }
 
+            fmt.Println(banner)
+            color.Cyan("Scanning: %s", rootPath)
+            color.Green("Detected: %s (%s, %s)", stack.Name, stack.Language, stack.PackageManager)
+            if dryRun {
+                color.Yellow("Dry run — would generate:")
+                for _, file := range files { fmt.Printf("  • %s\n", file.Path) }
+                return nil
+            }
             if err := generator.Generate(rootPath, stack, force); err != nil {
                 return err
             }
@@ -97,4 +98,11 @@ func main() {
         fmt.Fprintln(os.Stderr, err)
         os.Exit(1)
     }
+}
+
+func printJSON(out scanOutput) error {
+    data, err := json.MarshalIndent(out, "", "  ")
+    if err != nil { return err }
+    fmt.Println(string(data))
+    return nil
 }
