@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AutoLine — Cloud-Native Repository Automation</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:980px;margin:0 auto;padding:48px;line-height:1.6;background:#0b1020;color:#e9edf7}a{color:#7dd3fc}.hero{padding:36px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.card{padding:20px;border:1px solid #27324d;border-radius:14px;background:#11182b}code{background:#17213a;padding:2px 6px;border-radius:5px}button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer}#details{margin-top:24px}
+</style>
+</head>
+<body>
+<section class="hero"><h1>⚡ AutoLine</h1><p>Zero-config repository automation for production cloud-native delivery.</p><button onclick="show('architecture')">Explore architecture</button></section>
+<div class="grid">
+<div class="card"><h2>Polyglot workspaces</h2><p>Detect Node.js, Go, Rust and Python services recursively.</p><a href="monorepos.html">Read monorepo guide →</a></div>
+<div class="card"><h2>CI portability</h2><p>Generate GitHub Actions, GitLab CI or Bitbucket Pipelines.</p><a href="architecture.html">Read architecture →</a></div>
+<div class="card"><h2>Lean containers</h2><p>BuildKit caching, slim/distroless runtimes, OCI metadata and SBOM automation.</p><a href="caching.html">Read caching guide →</a></div>
+</div>
+<div id="details" class="card"><h2>Quick commands</h2><pre><code>autoline scan . --dry-run
+autoline scan . --provider=gitlab
+autoline scan . --provider=bitbucket --json</code></pre></div>
+<script>
+function show(topic){document.getElementById('details').innerHTML='<h2>'+topic+'</h2><p>AutoLine separates repository signal detection from artifact generation. The detector discovers modules deterministically, while the generator selects stack and CI-provider templates.</p><p><a href="architecture.html">Open the full architecture guide →</a></p>';}
+</script>
+</body>
+</html>
