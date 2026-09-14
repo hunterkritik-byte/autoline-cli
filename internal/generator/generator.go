@@ -11,19 +11,12 @@ import (
 
 func Generate(root string, stack detector.Stack, force bool) error {
     docker, workflow, precommit := Templates(stack)
-    files := map[string]string{
-        "Dockerfile": docker,
-        ".github/workflows/autoline.yml": workflow,
-        ".pre-commit-config.yaml": precommit,
-    }
+    files := map[string]string{"Dockerfile": docker, ".github/workflows/autoline.yml": workflow, ".pre-commit-config.yaml": precommit}
     for name, content := range files {
         path := filepath.Join(root, name)
         if !force {
-            if _, err := os.Stat(path); err == nil {
-                return fmt.Errorf("refusing to overwrite %s; rerun with --force", name)
-            } else if !os.IsNotExist(err) {
-                return fmt.Errorf("inspect %s: %w", name, err)
-            }
+            if _, err := os.Stat(path); err == nil { return fmt.Errorf("refusing to overwrite %s; rerun with --force", name) }
+            if !os.IsNotExist(err) { return fmt.Errorf("inspect %s: %w", name, err) }
         }
         if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { return fmt.Errorf("create directory for %s: %w", name, err) }
         if err := os.WriteFile(path, []byte(content), 0o644); err != nil { return fmt.Errorf("write %s: %w", name, err) }
@@ -42,12 +35,10 @@ func Templates(s detector.Stack) (string, string, string) {
 }
 
 func nodeDocker(s detector.Stack) string {
-    install := "npm ci"
-    if s.PackageManager == "pnpm" { install = "corepack enable && pnpm install --frozen-lockfile" }
-    if s.PackageManager == "yarn" { install = "corepack enable && yarn install --immutable" }
+    install := installCommand(s)
     build := s.BuildCommand
-    if strings.HasPrefix(build, "npm run") && s.PackageManager == "pnpm" { build = strings.Replace(build, "npm run", "pnpm run", 1) }
-    if strings.HasPrefix(build, "npm run") && s.PackageManager == "yarn" { build = strings.Replace(build, "npm run", "yarn", 1) }
+    if s.PackageManager == "pnpm" && strings.HasPrefix(build, "npm run") { build = strings.Replace(build, "npm run", "pnpm run", 1) }
+    if s.PackageManager == "yarn" && strings.HasPrefix(build, "npm run") { build = strings.Replace(build, "npm run", "yarn", 1) }
     return fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM node:22-bookworm AS build
 WORKDIR /app
@@ -55,7 +46,6 @@ COPY %s ./
 RUN --mount=type=cache,target=/root/.npm %s
 COPY . .
 RUN %s
-RUN npm prune --omit=dev
 
 FROM node:22-bookworm-slim
 WORKDIR /app
@@ -66,10 +56,11 @@ CMD ["%s"]
 }
 
 func pythonDocker(s detector.Stack) string {
-    dep := "requirements.txt"
-    install := "python -m pip install --no-cache-dir -r requirements.txt"
-    if s.PackageManager == "uv" { dep, install = "pyproject.toml uv.lock", "pip install uv && uv sync --frozen --no-dev" }
-    if s.PackageManager == "poetry" { dep, install = "pyproject.toml poetry.lock", "pip install poetry && poetry install --only main --no-interaction" }
+    if len(s.DependencyFiles) == 0 { return genericDocker() }
+    dep := strings.Join(s.DependencyFiles, " ")
+    install := "python -m pip install --prefix=/install -r requirements.txt"
+    if s.PackageManager == "poetry" { install = "python -m pip install poetry && poetry install --only main --no-interaction" }
+    if s.PackageManager == "uv" { install = "python -m pip install uv && uv sync --frozen --no-dev" }
     return fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM python:3.13-slim AS build
 WORKDIR /app
@@ -80,6 +71,7 @@ COPY . .
 FROM python:3.13-slim
 WORKDIR /app
 COPY --from=build /usr/local /usr/local
+COPY --from=build /install /usr/local
 COPY --from=build /app ./
 CMD ["python", "app.py"]
 `, dep, install)
@@ -114,20 +106,17 @@ ENTRYPOINT ["/usr/local/bin/%s"]
 `, s.BinaryName, s.BinaryName, s.BinaryName)
 }
 
-func genericDocker() string {
-    return `# syntax=docker/dockerfile:1.7
+func genericDocker() string { return `# syntax=docker/dockerfile:1.7
 FROM alpine:3.22
 WORKDIR /app
 COPY . .
 CMD ["sh"]
-`
-}
+` }
 
 func nodeWorkflow(s detector.Stack) string {
-    setup := "actions/setup-node@v4"
-    cache := "cache: npm"
-    if s.PackageManager == "pnpm" { cache = "cache: pnpm" }
-    if s.PackageManager == "yarn" { cache = "cache: yarn" }
+    cache := "npm"
+    if s.PackageManager == "pnpm" { cache = "pnpm" }
+    if s.PackageManager == "yarn" { cache = "yarn" }
     return fmt.Sprintf(`name: AutoLine CI
 on:
   push:
@@ -137,15 +126,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: %s
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          %s
+          cache: %s
       - run: %s
       - run: %s
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
-`, setup, cache, installCommand(s), s.BuildCommand)
+`, cache, installCommand(s), s.BuildCommand)
 }
 func pythonWorkflow(s detector.Stack) string { return fmt.Sprintf(`name: AutoLine CI
 on:
@@ -210,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
 ` }
 func precommit() string { return `repos:
