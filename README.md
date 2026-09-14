@@ -21,7 +21,7 @@ If AutoLine saves your team engineering time or CI spend, please consider sponso
 | [Monorepos](docs/monorepos.md) | Polyglot microservices and independent module generation |
 | [Caching](docs/caching.md) | Exact BuildKit mounts, CI caches, and cost mechanics |
 | [Design & safety](docs/design.md) | Project design, safety model, and extension points |
-| [Usage](docs/usage.md) | CLI workflows and review guidance |
+| [Usage](docs/usage.md) | Installation, first-run workflow, CLI commands, and review guidance |
 | [Roadmap](docs/roadmap.md) | Planned enterprise capabilities |
 
 ## What it does
@@ -38,32 +38,109 @@ AutoLine scans a repository and generates delivery assets without executing proj
 - Protects existing generated files unless `--force` is supplied
 - Supports `--dry-run` previews and `--json` machine-readable output
 - Provides `autoline doctor` diagnostics for a broad local toolchain
-- Provides `autoline languages` for a machine-readable or human-readable support inventory
+- Provides `autoline languages` for a support inventory
 - Provides optional Python-powered `autoline insights` for repository intelligence
 - Keeps the Go core portable while allowing specialist tooling in other languages
 
-## Quick start
+## Installation
+
+AutoLine is distributed as a Go CLI. The recommended installation works on Linux, macOS, Windows, and Termux when Go is installed.
+
+### 1. Install with Go
 
 ```bash
 go install github.com/hunterkritik-byte/autoline-cli/cmd/autoline@latest
+```
+
+`go install` places the executable in your Go binary directory. If your shell cannot find `autoline` immediately, add that directory to `PATH`:
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+autoline --help
+```
+
+For Bash, persist it with:
+
+```bash
+echo 'export PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+For Zsh, use `~/.zshrc` instead.
+
+**Termux:** the same Go installation works. If `ls "$(go env GOPATH)/bin"` shows `autoline` but `autoline` is not found, the binary is installed correctly; your PATH just needs the export above.
+
+### 2. Verify the installation
+
+```bash
+command -v autoline
+autoline --help
+autoline doctor
+```
+
+### 3. Run your first scan
+
+```bash
 cd your-project
+autoline scan . --dry-run
+```
+
+Start with `--dry-run` to preview what AutoLine detected and what it would generate. When the result looks correct:
+
+```bash
 autoline scan .
 ```
 
-Inspect repository intelligence with the optional Python engine:
+### Optional: repository intelligence
+
+`autoline insights` uses the optional Python specialist engine. It requires Python 3 and is intentionally read-only.
 
 ```bash
+python3 --version
 autoline insights .
 autoline insights . --json
 ```
 
 The insights engine uses only Python's standard library, never executes project code, ignores generated/dependency directories, and reports credential **patterns** without printing matched values.
 
-Inspect language support:
+## First-run workflow
+
+```text
+Install Go
+   ↓
+go install …/cmd/autoline@latest
+   ↓
+Ensure $(go env GOPATH)/bin is on PATH
+   ↓
+autoline doctor
+   ↓
+autoline scan . --dry-run --json
+   ↓
+Review detected modules and generated plan
+   ↓
+autoline scan .
+```
+
+For automation, keep `--json` enabled so CI or other tooling can consume stable machine-readable output.
+
+## Core commands
+
+Scan and generate:
 
 ```bash
-autoline languages
-autoline languages --json
+autoline scan .
+```
+
+Preview without writing:
+
+```bash
+autoline scan . --dry-run
+```
+
+Machine-readable scan output:
+
+```bash
+autoline scan . --dry-run --json
 ```
 
 Select a CI provider:
@@ -74,32 +151,36 @@ autoline scan . --provider=gitlab
 autoline scan . --provider=bitbucket
 ```
 
-Preview a workspace without writing anything:
+Inspect supported ecosystems:
 
 ```bash
-autoline scan . --dry-run
+autoline languages
+autoline languages --json
 ```
 
-Get machine-readable output for automation:
-
-```bash
-autoline scan . --dry-run --json
-```
-
-Check the local environment before using generated workflows:
+Check local prerequisites:
 
 ```bash
 autoline doctor
 autoline doctor --json
 ```
 
-To intentionally replace existing generated assets:
+Inspect repository intelligence:
+
+```bash
+autoline insights .
+autoline insights . --json
+```
+
+Replace existing generated assets intentionally:
 
 ```bash
 autoline scan . --force --provider=gitlab
 ```
 
-A single-service repository receives:
+## Generated assets
+
+A single-service repository can receive:
 
 ```text
 Dockerfile
@@ -132,14 +213,14 @@ The implementation keeps detection side-effect free, models each module independ
 ### Repository layout
 
 ```text
-cmd/autoline/main.go          CLI commands and machine-readable output
-internal/detector/            recursive manifest and lockfile signals
-internal/doctor/              local Git/Docker/toolchain diagnostics
-internal/generator/           stack + provider templates and safe writes
-tools/autoline_insights.py    optional Python repository intelligence
-tools/autoline_insights_test.py Python unit coverage
-docs/                         enterprise knowledge base and architecture guides
-.github/workflows/test.yml    Go, race, vet, build, and CLI validation
+cmd/autoline/main.go              CLI commands and machine-readable output
+internal/detector/                recursive manifest and lockfile signals
+internal/doctor/                  local Git/Docker/toolchain diagnostics
+internal/generator/               stack + provider templates and safe writes
+tools/autoline_insights.py        optional Python repository intelligence
+tools/autoline_insights_test.py  Python unit coverage
+docs/                             enterprise knowledge base and architecture guides
+.github/workflows/test.yml        Go, race, vet, build, and CLI validation
 ```
 
 ## Supported stacks
