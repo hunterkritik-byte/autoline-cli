@@ -1,4 +1,4 @@
-.PHONY: test race vet build lint tidy snapshot doctor
+.PHONY: test race vet build lint tidy snapshot doctor insights
 
 test:
 	go test ./...
@@ -19,6 +19,9 @@ snapshot: test
 
 doctor:
 	go run ./cmd/autoline doctor
+
+insights:
+	python3 tools/autoline_insights.py .
 
 tidy:
 	go mod tidy
