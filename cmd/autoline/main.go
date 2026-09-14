@@ -1,6 +1,7 @@
 package main
 
 import (
+    "encoding/json"
     "fmt"
     "os"
 
@@ -20,8 +21,17 @@ const banner = `
 
 var version = "dev"
 
+type scanOutput struct {
+    Path           string `json:"path"`
+    Stack          string `json:"stack"`
+    Language       string `json:"language"`
+    PackageManager string `json:"package_manager"`
+    Files          []string `json:"files"`
+    DryRun         bool `json:"dry_run"`
+}
+
 func main() {
-    var force bool
+    var force, dryRun, jsonOutput bool
     root := &cobra.Command{
         Use:           "autoline",
         Short:         "Zero-config repository automation",
@@ -43,13 +53,33 @@ func main() {
             if len(args) == 1 {
                 rootPath = args[0]
             }
-            fmt.Println(banner)
-            color.Cyan("Scanning: %s", rootPath)
             stack, err := detector.Detect(rootPath)
             if err != nil {
                 return err
             }
-            color.Green("Detected: %s (%s, %s)", stack.Name, stack.Language, stack.PackageManager)
+            files := generator.Files(stack)
+            names := make([]string, 0, len(files))
+            for _, file := range files {
+                names = append(names, file.Path)
+            }
+
+            if jsonOutput {
+                out := scanOutput{Path: rootPath, Stack: stack.Name, Language: stack.Language, PackageManager: stack.PackageManager, Files: names, DryRun: dryRun}
+                data, err := json.MarshalIndent(out, "", "  ")
+                if err != nil { return err }
+                fmt.Println(string(data))
+                if dryRun { return nil }
+            } else {
+                fmt.Println(banner)
+                color.Cyan("Scanning: %s", rootPath)
+                color.Green("Detected: %s (%s, %s)", stack.Name, stack.Language, stack.PackageManager)
+                if dryRun {
+                    color.Yellow("Dry run — would generate:")
+                    for _, file := range files { fmt.Printf("  • %s\n", file.Path) }
+                    return nil
+                }
+            }
+
             if err := generator.Generate(rootPath, stack, force); err != nil {
                 return err
             }
@@ -58,6 +88,8 @@ func main() {
         },
     }
     scan.Flags().BoolVar(&force, "force", false, "overwrite existing generated files")
+    scan.Flags().BoolVar(&dryRun, "dry-run", false, "detect and preview generated files without writing")
+    scan.Flags().BoolVar(&jsonOutput, "json", false, "emit machine-readable scan output")
     root.AddCommand(scan)
     root.SetHelpTemplate("AutoLine — repository automation\n\n{{.UsageString}}")
 
