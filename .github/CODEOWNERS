@@ -1,0 +1,7 @@
+# Default ownership for production changes
+* @hunterkritik-byte
+
+# High-risk automation surfaces
+/internal/detector/ @hunterkritik-byte
+/internal/generator/ @hunterkritik-byte
+/.github/workflows/ @hunterkritik-byte
