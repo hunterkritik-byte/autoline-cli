@@ -10,6 +10,8 @@
 
 If AutoLine saves your team engineering time or CI spend, please consider sponsoring development. Corporate sponsorship directly supports new language detectors, safer generators, benchmarks, and enterprise-ready CI/CD features.
 
+**Sponsorship & partnership inquiries:** hunterkritik@gmail.com
+
 ## What it does
 
 AutoLine scans a repository, detects common technology stacks, and generates practical delivery assets in one command:
@@ -41,8 +43,8 @@ Dockerfile
 ```text
 cmd/autoline/main.go          CLI entrypoint
 internal/detector/            Stack detection
-internal/generator/            Docker/CI generation
-.github/FUNDING.yml             Sponsorship configuration
+internal/generator/           Docker/CI generation
+.github/FUNDING.yml           Sponsorship configuration
 ```
 
 ## Development
