@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="AutoLine — zero-config repository automation for modern engineering teams"><title>AutoLine Docs</title><style>
+:root{--bg:#0b1020;--panel:#121a2d;--text:#edf2ff;--muted:#aab5d0;--accent:#7c9cff;--line:#26324d}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font:16px/1.65 system-ui,-apple-system,Segoe UI,sans-serif;background:linear-gradient(180deg,#0b1020,#0f172a);color:var(--text)}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.wrap{max-width:1120px;margin:auto;padding:0 24px}.nav{position:sticky;top:0;background:#0b1020ee;backdrop-filter:blur(12px);border-bottom:1px solid var(--line);z-index:5}.navin{height:64px;display:flex;align-items:center;justify-content:space-between}.brand{font-weight:800;font-size:20px}.links{display:flex;gap:20px}.hero{padding:90px 0 70px}.eyebrow{text-transform:uppercase;letter-spacing:.14em;color:var(--accent);font-weight:700;font-size:13px}.hero h1{font-size:clamp(42px,7vw,76px);line-height:1;margin:14px 0}.hero p{max-width:720px;color:var(--muted);font-size:20px}.buttons{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.btn{padding:11px 17px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);font-weight:700}.primary{background:var(--accent);color:#081020;border-color:var(--accent)}section{padding:55px 0;border-top:1px solid var(--line)}h2{font-size:32px;margin-top:0}h3{margin-bottom:6px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.card{background:#121a2dcc;border:1px solid var(--line);border-radius:14px;padding:22px}.code{background:#070b14;border:1px solid var(--line);border-radius:12px;padding:20px;overflow:auto;color:#d9e1f2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 9px;margin:3px;color:var(--muted);font-size:13px}footer{padding:40px 0;color:var(--muted)}@media(max-width:700px){.links{display:none}.hero{padding-top:60px}}
+</style></head><body>
+<nav class="nav"><div class="wrap navin"><a class="brand" href="#top">⚡ AutoLine</a><div class="links"><a href="#quickstart">Quickstart</a><a href="#features">Features</a><a href="#architecture">Architecture</a><a href="#commands">Commands</a><a href="https://github.com/hunterkritik-byte/autoline-cli">GitHub</a></div></div></nav>
+<main id="top"><header class="hero wrap"><div class="eyebrow">Enterprise-ready repository automation</div><h1>Build delivery infrastructure automatically.</h1><p>AutoLine scans repositories, detects polyglot workspaces, and generates reviewable Docker, CI, SBOM, and developer-quality assets without executing project commands during scanning.</p><div class="buttons"><a class="btn primary" href="#quickstart">Get started</a><a class="btn" href="https://github.com/hunterkritik-byte/autoline-cli">View on GitHub</a></div></header>
+<section id="features"><div class="wrap"><h2>Built for modern engineering teams</h2><div class="grid"><div class="card"><h3>Polyglot detection</h3><p>Discover independent services across Node.js, Python, Go, Rust, Java, Kotlin, .NET, PHP, Ruby, Elixir, Dart, Swift, C/C++, and more.</p></div><div class="card"><h3>Safe generation</h3><p>Existing generated assets are protected by default. Use dry runs and review generated output before deployment.</p></div><div class="card"><h3>CI + containers</h3><p>Generate multi-stage Dockerfiles and provider-specific CI for GitHub Actions, GitLab CI, and Bitbucket Pipelines.</p></div><div class="card"><h3>Repository intelligence</h3><p>The optional Python insights engine provides read-only language, manifest, TODO, and credential-pattern inventory.</p></div><div class="card"><h3>Machine-readable</h3><p>Use JSON output from scan, doctor, languages, and insights commands in automation and platform tooling.</p></div><div class="card"><h3>Open source</h3><p>MIT-licensed and designed with a portable Go core plus optional specialist engines.</p></div></div></div></section>
+<section id="quickstart"><div class="wrap"><h2>Quickstart</h2><p>Install the CLI, enter a repository, and preview what AutoLine detects.</p><div class="code">go install github.com/hunterkritik-byte/autoline-cli/cmd/autoline@latest
+cd your-project
+autoline scan . --dry-run --json</div><p>Generate delivery assets when the preview looks correct:</p><div class="code">autoline scan . --provider=github</div></div></section>
+<section id="commands"><div class="wrap"><h2>CLI commands</h2><div class="grid"><div class="card"><h3>scan</h3><p>Detect a workspace and generate delivery assets.</p></div><div class="card"><h3>insights</h3><p>Run optional Python repository intelligence.</p></div><div class="card"><h3>languages</h3><p>Inspect supported language and ecosystem signals.</p></div><div class="card"><h3>doctor</h3><p>Validate local Git, Docker, and toolchain prerequisites.</p></div></div><div class="code">autoline scan . --dry-run
+autoline scan . --force --provider=gitlab
+autoline insights . --json
+autoline languages --json
+autoline doctor --json</div></div></section>
+<section id="architecture"><div class="wrap"><h2>Architecture</h2><p>AutoLine keeps the core engine portable and delegates specialized repository analysis to optional tools.</p><div class="code">Repository
+   │
+   ▼
+Go AutoLine Core
+   │
+   ├── DetectWorkspace ──► Unified Stack Model
+   │                              │
+   │                              ▼
+   │                       Safe Generator
+   │                         │    │    │
+   │                         ▼    ▼    ▼
+   │                       Docker  CI  SBOM
+   │
+   └── Optional Specialists
+          ├── Python Insights
+          ├── Rust Analyzer (planned)
+          └── Node/TS Analyzer (planned)</div></div></section>
+<section><div class="wrap"><h2>Supported ecosystems</h2><p><span class="pill">Node.js</span><span class="pill">Python</span><span class="pill">Go</span><span class="pill">Rust</span><span class="pill">Java</span><span class="pill">Kotlin</span><span class="pill">C#/.NET</span><span class="pill">PHP</span><span class="pill">Ruby</span><span class="pill">Elixir</span><span class="pill">Dart/Flutter</span><span class="pill">Swift</span><span class="pill">C/C++</span><span class="pill">Scala</span><span class="pill">Haskell</span><span class="pill">Lua</span><span class="pill">Julia</span><span class="pill">Zig</span><span class="pill">Deno</span></p></div></section></main>
+<footer><div class="wrap">© AutoLine · <a href="https://github.com/hunterkritik-byte/autoline-cli">GitHub repository</a> · MIT License</div></footer></body></html>
