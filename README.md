@@ -28,16 +28,17 @@ If AutoLine saves your team engineering time or CI spend, please consider sponso
 
 AutoLine scans a repository and generates delivery assets without executing project commands during scanning.
 
-- Detects Node.js, Python, Go, Rust, and generic projects
+- Detects JavaScript/Node.js, Python, Go, Rust, Java, Kotlin/Gradle, C#/.NET, PHP, Ruby, Elixir, Dart/Flutter, Swift, C/C++, and generic projects
 - Recursively discovers independent modules in polyglot monorepos
-- Detects npm, pnpm, Yarn, pip, Poetry, uv, Go modules, and Cargo signals
-- Generates multi-stage Dockerfiles with BuildKit dependency caching
+- Detects npm, pnpm, Yarn, Bun, pip, Poetry, uv, Go modules, Cargo, Maven, Gradle, dotnet, Composer, Bundler, Mix, Pub, SwiftPM, and CMake signals
+- Generates multi-stage Dockerfiles with BuildKit dependency caching for the mature built-in stacks
 - Adds OCI image metadata and CI-driven SPDX SBOM generation
 - Supports GitHub Actions, GitLab CI, and Bitbucket Pipelines
 - Generates pre-commit hooks for common repository hygiene checks
 - Protects existing generated files unless `--force` is supplied
 - Supports `--dry-run` previews and `--json` machine-readable output
-- Provides `autoline doctor` diagnostics for local CI/build prerequisites
+- Provides `autoline doctor` diagnostics for a broad local toolchain
+- Provides `autoline languages` for a machine-readable or human-readable support inventory
 - Keeps detection and generation modular for easy extension
 
 ## Quick start
@@ -46,6 +47,13 @@ AutoLine scans a repository and generates delivery assets without executing proj
 go install github.com/hunterkritik-byte/autoline-cli/cmd/autoline@latest
 cd your-project
 autoline scan .
+```
+
+Inspect language support:
+
+```bash
+autoline languages
+autoline languages --json
 ```
 
 Select a CI provider:
@@ -122,7 +130,7 @@ The implementation keeps detection side-effect free, models each module independ
 ```text
 cmd/autoline/main.go          CLI commands and machine-readable output
 internal/detector/            recursive manifest and lockfile signals
-internal/doctor/              local Git/Docker/Buildx/pre-commit diagnostics
+internal/doctor/              local Git/Docker/toolchain diagnostics
 internal/generator/           stack + provider templates and safe writes
 internal/generator/testdata/  immutable generated-asset snapshots
 docs/                         enterprise knowledge base and architecture guides
@@ -131,13 +139,24 @@ docs/                         enterprise knowledge base and architecture guides
 
 ## Supported stacks
 
-| Stack | Detection | Docker strategy | CI setup |
-| --- | --- | --- | --- |
-| Node.js | package.json + lockfile | dependency caching + slim runtime | setup-node / provider pipeline |
-| Python | requirements.txt / pyproject.toml | pip cache + slim runtime | setup-python / provider pipeline |
-| Go | go.mod | module/build cache + distroless runtime | setup-go / provider pipeline |
-| Rust | Cargo.toml | Cargo cache + distroless runtime | Rust toolchain / provider pipeline |
-| Generic | fallback | reviewable Alpine base | Docker build |
+| Stack | Detection | Built-in generation |
+| --- | --- | --- |
+| Node.js | package.json + npm/pnpm/Yarn/Bun lockfiles | Optimized Docker + CI |
+| Python | requirements.txt / pyproject.toml + pip/Poetry/uv locks | Optimized Docker + CI |
+| Go | go.mod | Optimized Docker + CI |
+| Rust | Cargo.toml | Optimized Docker + CI |
+| Java | pom.xml | Detection + safe generic generation |
+| Kotlin/Gradle | Gradle build/settings manifests | Detection + safe generic generation |
+| C#/.NET | *.csproj / *.sln | Detection + safe generic generation |
+| PHP | composer.json | Detection + safe generic generation |
+| Ruby | Gemfile | Detection + safe generic generation |
+| Elixir | mix.exs | Detection + safe generic generation |
+| Dart/Flutter | pubspec.yaml | Detection + safe generic generation |
+| Swift | Package.swift | Detection + safe generic generation |
+| C/C++ | CMakeLists.txt | Detection + safe generic generation |
+| Generic | no recognized manifest | Reviewable Alpine baseline |
+
+The extended language detectors intentionally prefer a safe baseline over guessing framework-specific runtime artifacts. Language-specific Docker/CI templates can be added independently without changing workspace detection.
 
 ## Development
 
@@ -148,6 +167,7 @@ go test -race ./...
 go vet ./...
 go build ./cmd/autoline
 go run ./cmd/autoline scan . --dry-run --json
+go run ./cmd/autoline languages --json
 ```
 
 Convenience targets are also available:
@@ -165,7 +185,7 @@ Generated assets are templates, not deployment guarantees. Review custom build o
 
 ## Enterprise direction
 
-AutoLine is designed to grow toward policy-driven generation, registry-backed BuildKit caches, image provenance, framework-aware build artifact detection, and richer CI integrations without coupling repository detection to one provider.
+AutoLine is designed to grow toward policy-driven generation, registry-backed BuildKit caches, image provenance, framework-aware build artifact detection, richer CI integrations, and dedicated templates for the extended language matrix without coupling repository detection to one provider.
 
 ## Contributing
 
