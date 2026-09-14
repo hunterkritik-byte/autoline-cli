@@ -9,18 +9,73 @@ import (
     "github.com/hunterkritik-byte/autoline-cli/internal/detector"
 )
 
-// Files returns the deterministic set of assets AutoLine would generate.
-func Files(s detector.Stack) []struct{ Path, Content string } {
-    docker, workflow, precommit := Templates(s)
-    return []struct{ Path, Content string }{
-        {"Dockerfile", docker},
-        {".github/workflows/autoline.yml", workflow},
-        {".pre-commit-config.yaml", precommit},
+type Provider string
+
+const (
+    ProviderGitHub    Provider = "github"
+    ProviderGitLab    Provider = "gitlab"
+    ProviderBitbucket Provider = "bitbucket"
+)
+
+type GeneratedFile struct {
+    Path    string
+    Content string
+}
+
+func ParseProvider(value string) (Provider, error) {
+    switch Provider(strings.ToLower(strings.TrimSpace(value))) {
+    case ProviderGitHub:
+        return ProviderGitHub, nil
+    case ProviderGitLab:
+        return ProviderGitLab, nil
+    case ProviderBitbucket:
+        return ProviderBitbucket, nil
+    default:
+        return "", fmt.Errorf("unsupported CI provider %q; choose github, gitlab, or bitbucket", value)
     }
 }
 
+// Files returns the deterministic default GitHub asset set.
+func Files(s detector.Stack) []GeneratedFile {
+    return FilesForProvider(s, ProviderGitHub)
+}
+
+func FilesForProvider(s detector.Stack, provider Provider) []GeneratedFile {
+    docker, workflow, precommit := TemplatesForProvider(s, provider)
+    workflowPath := map[Provider]string{
+        ProviderGitHub:    ".github/workflows/autoline.yml",
+        ProviderGitLab:    ".gitlab-ci.yml",
+        ProviderBitbucket: "bitbucket-pipelines.yml",
+    }[provider]
+    return []GeneratedFile{{"Dockerfile", docker}, {workflowPath, workflow}, {".pre-commit-config.yaml", precommit}}
+}
+
 func Generate(root string, stack detector.Stack, force bool) error {
-    for _, file := range Files(stack) {
+    return GenerateWithProvider(root, stack, ProviderGitHub, force)
+}
+
+func GenerateWithProvider(root string, stack detector.Stack, provider Provider, force bool) error {
+    if _, err := ParseProvider(string(provider)); err != nil { return err }
+    return writeFiles(root, FilesForProvider(stack, provider), force)
+}
+
+func GenerateWorkspace(root string, workspace detector.Workspace, provider Provider, force bool) error {
+    if len(workspace.Modules) == 0 {
+        return fmt.Errorf("no application modules detected under %s", root)
+    }
+    for _, module := range workspace.Modules {
+        moduleRoot := root
+        if module.Path != "." { moduleRoot = filepath.Join(root, filepath.FromSlash(module.Path)) }
+        files := FilesForProvider(module.Stack, provider)
+        if err := writeFiles(moduleRoot, files, force); err != nil {
+            return fmt.Errorf("generate module %s: %w", module.Path, err)
+        }
+    }
+    return nil
+}
+
+func writeFiles(root string, files []GeneratedFile, force bool) error {
+    for _, file := range files {
         path := filepath.Join(root, file.Path)
         if !force {
             if _, err := os.Stat(path); err == nil {
@@ -40,32 +95,56 @@ func Generate(root string, stack detector.Stack, force bool) error {
 }
 
 func Templates(s detector.Stack) (string, string, string) {
+    return TemplatesForProvider(s, ProviderGitHub)
+}
+
+func TemplatesForProvider(s detector.Stack, provider Provider) (string, string, string) {
+    var workflow string
     switch s.Name {
     case "Node.js":
-        return nodeDocker(s), nodeWorkflow(s), precommit()
+        workflow = providerWorkflow(provider, nodeWorkflow(s), gitlabWorkflow(s), bitbucketWorkflow(s))
+        return nodeDocker(s), workflow, precommit()
     case "Python":
-        return pythonDocker(s), pythonWorkflow(s), precommit()
+        workflow = providerWorkflow(provider, pythonWorkflow(s), gitlabWorkflow(s), bitbucketWorkflow(s))
+        return pythonDocker(s), workflow, precommit()
     case "Go":
-        return goDocker(s), goWorkflow(s), precommit()
+        workflow = providerWorkflow(provider, goWorkflow(s), gitlabWorkflow(s), bitbucketWorkflow(s))
+        return goDocker(s), workflow, precommit()
     case "Rust":
-        return rustDocker(s), rustWorkflow(s), precommit()
+        workflow = providerWorkflow(provider, rustWorkflow(s), gitlabWorkflow(s), bitbucketWorkflow(s))
+        return rustDocker(s), workflow, precommit()
     default:
-        return genericDocker(), genericWorkflow(), precommit()
+        workflow = providerWorkflow(provider, genericWorkflow(), gitlabWorkflow(s), bitbucketWorkflow(s))
+        return genericDocker(), workflow, precommit()
     }
+}
+
+func providerWorkflow(provider Provider, github, gitlab, bitbucket string) string {
+    switch provider {
+    case ProviderGitLab:
+        return gitlab
+    case ProviderBitbucket:
+        return bitbucket
+    default:
+        return github
+    }
+}
+
+func metadataLabels() string {
+    return `LABEL org.opencontainers.image.title="AutoLine generated image" \\
+      org.opencontainers.image.description="Container generated by AutoLine" \\
+      org.opencontainers.image.source="https://github.com/hunterkritik-byte/autoline-cli" \\
+      org.opencontainers.image.licenses="MIT" \\
+      org.opencontainers.image.version="generated"`
 }
 
 func nodeDocker(s detector.Stack) string {
     install := installCommand(s)
     build := s.BuildCommand
-    if build == "" {
-        build = "echo 'No build script detected'"
-    }
+    if build == "" { build = "echo 'No build script detected'" }
     cache := "/root/.npm"
-    if s.PackageManager == "pnpm" {
-        cache = "/root/.local/share/pnpm/store"
-    } else if s.PackageManager == "yarn" {
-        cache = "/usr/local/share/.cache/yarn"
-    }
+    if s.PackageManager == "pnpm" { cache = "/root/.local/share/pnpm/store" }
+    if s.PackageManager == "yarn" { cache = "/usr/local/share/.cache/yarn" }
     return fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM node:22-bookworm AS build
 WORKDIR /app
@@ -77,25 +156,24 @@ RUN %s
 FROM node:22-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
+%s
 COPY --from=build /app ./
+RUN npm prune --omit=dev 2>/dev/null || true
 CMD ["%s"]
-`, strings.Join(s.DependencyFiles, " "), cache, install, build, shellJSON(s.RuntimeCommand))
+`, strings.Join(s.DependencyFiles, " "), cache, install, build, metadataLabels(), shellJSON(s.RuntimeCommand))
 }
 
 func pythonDocker(s detector.Stack) string {
-    if len(s.DependencyFiles) == 0 {
-        return genericDocker()
-    }
+    if len(s.DependencyFiles) == 0 { return genericDocker() }
     dep := strings.Join(s.DependencyFiles, " ")
     install := "python -m pip install --prefix=/install -r requirements.txt"
     runtimeCopy := "COPY --from=build /install /usr/local"
     if s.PackageManager == "poetry" {
-        install = "python -m pip install --prefix=/install poetry && POETRY_VIRTUALENVS_CREATE=false poetry install --only main --no-interaction"
-        runtimeCopy = "COPY --from=build /usr/local /usr/local\nCOPY --from=build /install /usr/local"
+        install = "python -m pip install --prefix=/install poetry && POETRY_HOME=/opt/poetry /install/bin/poetry config virtualenvs.create false && cd /app && /install/bin/poetry install --only main --no-interaction"
+        runtimeCopy = "COPY --from=build /install /usr/local"
     }
     if s.PackageManager == "uv" {
-        install = "python -m pip install --prefix=/install uv && uv pip install --system --prefix=/install --no-deps -r requirements.txt"
-        runtimeCopy = "COPY --from=build /install /usr/local"
+        install = "python -m pip install --prefix=/install uv && /install/bin/uv pip install --system --prefix=/install -r requirements.txt"
     }
     return fmt.Sprintf(`# syntax=docker/dockerfile:1.7
 FROM python:3.13-slim AS build
@@ -107,9 +185,10 @@ COPY . .
 FROM python:3.13-slim
 WORKDIR /app
 %s
+%s
 COPY --from=build /app ./
 CMD ["python", "app.py"]
-`, dep, install, runtimeCopy)
+`, dep, install, metadataLabels(), runtimeCopy)
 }
 
 func goDocker(s detector.Stack) string {
@@ -122,6 +201,7 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/autoline-app .
 
 FROM gcr.io/distroless/static-debian12:nonroot
+` + metadataLabels() + `
 COPY --from=build /out/autoline-app /autoline-app
 ENTRYPOINT ["/autoline-app"]
 `
@@ -135,16 +215,18 @@ COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/app/target cargo build --release
 
-FROM debian:bookworm-slim
+FROM gcr.io/distroless/cc-debian12:nonroot
+%s
 COPY --from=build /app/target/release/%s /usr/local/bin/%s
 ENTRYPOINT ["/usr/local/bin/%s"]
-`, s.BinaryName, s.BinaryName, s.BinaryName)
+`, metadataLabels(), s.BinaryName, s.BinaryName, s.BinaryName)
 }
 
 func genericDocker() string {
     return `# syntax=docker/dockerfile:1.7
 FROM alpine:3.22
 WORKDIR /app
+` + metadataLabels() + `
 COPY . .
 CMD ["sh"]
 `
@@ -152,17 +234,10 @@ CMD ["sh"]
 
 func nodeWorkflow(s detector.Stack) string {
     cache := "npm"
-    install := installCommand(s)
-    if s.PackageManager == "pnpm" {
-        cache = "pnpm"
-    }
-    if s.PackageManager == "yarn" {
-        cache = "yarn"
-    }
+    if s.PackageManager == "pnpm" { cache = "pnpm" }
+    if s.PackageManager == "yarn" { cache = "yarn" }
     build := s.BuildCommand
-    if build == "" {
-        build = "echo 'No build script detected'"
-    }
+    if build == "" { build = "echo 'No build script detected'" }
     return fmt.Sprintf(`name: AutoLine CI
 on:
   push:
@@ -182,7 +257,11 @@ jobs:
       - run: %s
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
-`, cache, install, build)
+      - uses: anchore/sbom-action@v0
+        with:
+          image: autoline-app:ci
+          artifact-name: sbom.spdx.json
+`, cache, installCommand(s), build)
 }
 
 func pythonWorkflow(s detector.Stack) string {
@@ -205,6 +284,10 @@ jobs:
       - run: %s
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
+      - uses: anchore/sbom-action@v0
+        with:
+          image: autoline-app:ci
+          artifact-name: sbom.spdx.json
 `, pythonInstallCommand(s), s.BuildCommand)
 }
 
@@ -229,6 +312,10 @@ jobs:
       - run: go build ./...
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
+      - uses: anchore/sbom-action@v0
+        with:
+          image: autoline-app:ci
+          artifact-name: sbom.spdx.json
 `
 }
 
@@ -251,6 +338,10 @@ jobs:
       - run: cargo build --release --locked
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
+      - uses: anchore/sbom-action@v0
+        with:
+          image: autoline-app:ci
+          artifact-name: sbom.spdx.json
 `
 }
 
@@ -268,6 +359,66 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - run: docker buildx build --load --tag autoline-app:ci .
+      - uses: anchore/sbom-action@v0
+        with:
+          image: autoline-app:ci
+          artifact-name: sbom.spdx.json
+`
+}
+
+func gitlabWorkflow(s detector.Stack) string {
+    return `stages: [validate, image, security]
+
+variables:
+  DOCKER_BUILDKIT: "1"
+
+validate:
+  stage: validate
+  image: alpine:3.22
+  script:
+    - echo "AutoLine validation for ` + s.Name + `"
+
+docker:
+  stage: image
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  script:
+    - docker build --tag autoline-app:$CI_COMMIT_SHA .
+
+sbom:
+  stage: security
+  image: anchore/syft:latest
+  script:
+    - syft autoline-app:$CI_COMMIT_SHA -o spdx-json=sbom.spdx.json
+  artifacts:
+    paths: [sbom.spdx.json]
+`
+}
+
+func bitbucketWorkflow(s detector.Stack) string {
+    return `image: docker:27-cli
+
+pipelines:
+  default:
+    - step:
+        name: AutoLine validation and image
+        services:
+          - docker
+        caches:
+          - docker
+        script:
+          - docker build -t autoline-app:${BITBUCKET_COMMIT} .
+          - docker save autoline-app:${BITBUCKET_COMMIT} -o image.tar
+        artifacts:
+          - image.tar
+    - step:
+        name: Generate SBOM
+        image: anchore/syft:latest
+        script:
+          - syft docker-archive:image.tar -o spdx-json=sbom.spdx.json
+        artifacts:
+          - sbom.spdx.json
 `
 }
 
@@ -286,22 +437,14 @@ func precommit() string {
 }
 
 func installCommand(s detector.Stack) string {
-    if s.PackageManager == "pnpm" {
-        return "corepack enable && pnpm install --frozen-lockfile"
-    }
-    if s.PackageManager == "yarn" {
-        return "corepack enable && yarn install --immutable"
-    }
+    if s.PackageManager == "pnpm" { return "corepack enable && pnpm install --frozen-lockfile" }
+    if s.PackageManager == "yarn" { return "corepack enable && yarn install --immutable" }
     return "npm ci"
 }
 
 func pythonInstallCommand(s detector.Stack) string {
-    if s.PackageManager == "poetry" {
-        return "python -m pip install poetry && poetry install --only main --no-interaction"
-    }
-    if s.PackageManager == "uv" {
-        return "python -m pip install uv && uv sync --frozen --no-dev"
-    }
+    if s.PackageManager == "poetry" { return "python -m pip install poetry && poetry install --only main --no-interaction" }
+    if s.PackageManager == "uv" { return "python -m pip install uv && uv sync --frozen --no-dev" }
     return "python -m pip install -r requirements.txt"
 }
 

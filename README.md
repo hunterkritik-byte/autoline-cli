@@ -12,18 +12,30 @@ If AutoLine saves your team engineering time or CI spend, please consider sponso
 
 **Sponsorship & partnership inquiries:** hunterkritik@gmail.com
 
+## Table of contents
+
+| Guide | What you get |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Detector signals, workspace model, generation engine, extension boundaries |
+| [Monorepos](docs/monorepos.md) | Polyglot microservices and independent module generation |
+| [Caching](docs/caching.md) | Exact BuildKit mounts, CI caches, and cost mechanics |
+| [Design & safety](docs/design.md) | Project design, safety model, and extension points |
+| [Usage](docs/usage.md) | CLI workflows and review guidance |
+| [Roadmap](docs/roadmap.md) | Planned enterprise capabilities |
+
 ## What it does
 
 AutoLine scans a repository and generates delivery assets without executing project commands during scanning.
 
 - Detects Node.js, Python, Go, Rust, and generic projects
+- Recursively discovers independent modules in polyglot monorepos
 - Detects npm, pnpm, Yarn, pip, Poetry, uv, Go modules, and Cargo signals
 - Generates multi-stage Dockerfiles with BuildKit dependency caching
-- Generates GitHub Actions workflows with language-aware caching and read-only contents permissions
+- Adds OCI image metadata and CI-driven SPDX SBOM generation
+- Supports GitHub Actions, GitLab CI, and Bitbucket Pipelines
 - Generates pre-commit hooks for common repository hygiene checks
 - Protects existing generated files unless `--force` is supplied
-- Supports `--dry-run` previews before changing a repository
-- Supports `--json` output for scripting and CI integrations
+- Supports `--dry-run` previews and `--json` machine-readable output
 - Keeps detection and generation modular for easy extension
 
 ## Quick start
@@ -34,13 +46,21 @@ cd your-project
 autoline scan .
 ```
 
-Preview without writing anything:
+Select a CI provider:
+
+```bash
+autoline scan . --provider=github
+autoline scan . --provider=gitlab
+autoline scan . --provider=bitbucket
+```
+
+Preview a workspace without writing anything:
 
 ```bash
 autoline scan . --dry-run
 ```
 
-Get machine-readable detection output:
+Get machine-readable output for automation:
 
 ```bash
 autoline scan . --dry-run --json
@@ -49,34 +69,39 @@ autoline scan . --dry-run --json
 To intentionally replace existing generated assets:
 
 ```bash
-autoline scan . --force
+autoline scan . --force --provider=gitlab
 ```
 
-Generated files:
+A single-service repository receives:
 
 ```text
 Dockerfile
-.github/workflows/autoline.yml
+.github/workflows/autoline.yml   # GitHub provider
+.gitlab-ci.yml                   # GitLab provider
+bitbucket-pipelines.yml          # Bitbucket provider
 .pre-commit-config.yaml
 ```
+
+A polyglot workspace receives the selected asset set inside each detected service directory.
 
 ## Supported stacks
 
 | Stack | Detection | Docker strategy | CI setup |
 | --- | --- | --- | --- |
-| Node.js | package.json + lockfile | dependency-layer caching | setup-node |
-| Python | requirements.txt / pyproject.toml | pip cache + multi-stage | setup-python |
-| Go | go.mod | module/build cache + distroless runtime | setup-go |
-| Rust | Cargo.toml | Cargo registry/target cache | Rust toolchain |
+| Node.js | package.json + lockfile | dependency caching + slim runtime | setup-node / provider pipeline |
+| Python | requirements.txt / pyproject.toml | pip cache + slim runtime | setup-python / provider pipeline |
+| Go | go.mod | module/build cache + distroless runtime | setup-go / provider pipeline |
+| Rust | Cargo.toml | Cargo cache + distroless runtime | Rust toolchain / provider pipeline |
 | Generic | fallback | reviewable Alpine base | Docker build |
 
 ## Architecture
 
 ```text
-cmd/autoline/main.go          CLI and command UX
-internal/detector/            manifest and lockfile detection
-internal/generator/           Docker, CI, and pre-commit generation
-docs/design.md                architecture and safety model
+cmd/autoline/main.go          CLI, provider selection, workspace reporting
+internal/detector/            recursive manifest and lockfile signals
+internal/generator/           stack + provider templates and safe writes
+internal/generator/testdata/  immutable generated-asset snapshots
+docs/                         enterprise knowledge base
 .github/workflows/test.yml    AutoLine project validation
 ```
 
@@ -86,20 +111,14 @@ docs/design.md                architecture and safety model
 go mod tidy
 go test ./...
 go vet ./...
-go run ./cmd/autoline scan . --dry-run
+go run ./cmd/autoline scan . --dry-run --json
 ```
 
 Generated assets are templates, not deployment guarantees. Review custom build outputs, native dependencies, monorepo layouts, secrets, and deployment-specific requirements before production use.
 
-## Roadmap
+## Enterprise direction
 
-- Monorepo/workspace-aware generation
-- Framework-specific build artifact detection
-- Registry-backed BuildKit cache configuration
-- Additional CI providers
-- Container image metadata, SBOM, and provenance options
-- Snapshot tests for generated assets
-- Optional remote cache and artifact configuration
+AutoLine is designed to grow toward policy-driven generation, registry-backed BuildKit caches, image provenance, framework-aware build artifact detection, and richer CI integrations without coupling repository detection to one provider.
 
 ## Contributing
 
