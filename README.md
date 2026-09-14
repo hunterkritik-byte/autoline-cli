@@ -19,9 +19,11 @@ AutoLine scans a repository and generates delivery assets without executing proj
 - Detects Node.js, Python, Go, Rust, and generic projects
 - Detects npm, pnpm, Yarn, pip, Poetry, uv, Go modules, and Cargo signals
 - Generates multi-stage Dockerfiles with BuildKit dependency caching
-- Generates GitHub Actions workflows with language-aware caching
+- Generates GitHub Actions workflows with language-aware caching and read-only contents permissions
 - Generates pre-commit hooks for common repository hygiene checks
 - Protects existing generated files unless `--force` is supplied
+- Supports `--dry-run` previews before changing a repository
+- Supports `--json` output for scripting and CI integrations
 - Keeps detection and generation modular for easy extension
 
 ## Quick start
@@ -30,6 +32,18 @@ AutoLine scans a repository and generates delivery assets without executing proj
 go install github.com/hunterkritik-byte/autoline-cli/cmd/autoline@latest
 cd your-project
 autoline scan .
+```
+
+Preview without writing anything:
+
+```bash
+autoline scan . --dry-run
+```
+
+Get machine-readable detection output:
+
+```bash
+autoline scan . --dry-run --json
 ```
 
 To intentionally replace existing generated assets:
@@ -72,7 +86,7 @@ docs/design.md                architecture and safety model
 go mod tidy
 go test ./...
 go vet ./...
-go run ./cmd/autoline scan .
+go run ./cmd/autoline scan . --dry-run
 ```
 
 Generated assets are templates, not deployment guarantees. Review custom build outputs, native dependencies, monorepo layouts, secrets, and deployment-specific requirements before production use.
@@ -85,6 +99,7 @@ Generated assets are templates, not deployment guarantees. Review custom build o
 - Additional CI providers
 - Container image metadata, SBOM, and provenance options
 - Snapshot tests for generated assets
+- Optional remote cache and artifact configuration
 
 ## Contributing
 
